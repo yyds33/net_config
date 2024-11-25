@@ -3,7 +3,7 @@ import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QPushButton, QGridLayout,QVBoxLayout,QHBoxLayout, QWidget, QTableWidget,
                              QTableWidgetItem,QLabel, QLineEdit,QComboBox, QTextEdit,QMessageBox,QTabWidget)
 from PyQt5.QtCore import QThread, pyqtSignal,Qt,QCoreApplication, QStandardPaths
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPixmap
 import serial
 import serial.tools.list_ports
 from Send_alarm import SendAlarm
@@ -13,8 +13,10 @@ from Switch_config import switch_config
 from Router_config import router_config
 from telnet_class import TelnetClient
 from  socket import *
+import ctypes
 from threading import Thread
-
+myappid = "huaweinetconfig"
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 tr = QCoreApplication.translate
 
@@ -111,11 +113,14 @@ class tcp_task(QThread):
 
 class MainWindow(QMainWindow):  
     def __init__(self):  
-        super().__init__()  
+        super().__init__()
+        # self.setWindowIcon(QIcon('D:\\dabao\\main.ico'))
         self.data_dtu=dict()
-        self.initUI()
+        self.telnet_client=None
         self.receiver = None
         self.net_receiver=None
+        self.current_device=None
+        self.initUI()
         self.alarm = SendAlarm("net visual config")
         self.alarm.start_alarm("net visual config app start!")
   
@@ -153,7 +158,7 @@ class MainWindow(QMainWindow):
         self.net_status= QLabel('网络状态：')
         self.bind_ip_textedit = QLineEdit()
         self.bind_ip_textedit.setFixedWidth(200)
-        self.bind_ip_textedit.setText("192.168.1.99")
+        self.bind_ip_textedit.setText("192.168.56.2")
         self.bind_port_textedit=QLineEdit()
         # self.bind_port_textedit.setFixedWidth(200)
         self.bind_port_textedit.setText("23")
@@ -164,7 +169,7 @@ class MainWindow(QMainWindow):
 
         self.password_textedit = QLineEdit()
         # self.password_textedit.setFixedWidth(200)
-        self.password_textedit.setText("a1234567")
+        self.password_textedit.setText("huawei")
         self.btopen_netlisten = QPushButton('telnet连接', self)
         self.btopen_netlisten.setStyleSheet("QPushButton {"
                                          "  color: white;"
@@ -202,23 +207,73 @@ class MainWindow(QMainWindow):
             ]
 
         self.current_tab = None
+        no_devices = 'No devices connect, attempt connect telnet or console'
+        step_tip ="\n如果telnet连接，请先在配置界面按如下步骤配置设备IP，开启telnet\n\n"
+        edit_ip_tip= '''\n<Huawei>system-view 
+[Huawei]vlan 10
+[Huawei-vlan10]quit
+[Huawei]interface vl	
+[Huawei]interface Vlanif 10
+[Huawei-Vlanif10]ip address 192.168.0.115 24
+[Huawei-Vlanif10]quit
+[Huawei]interface GigabitEthernet 0/0/1
+[Huawei-GigabitEthernet0/0/1]port link-type access
+[Huawei-GigabitEthernet0/0/1]port default vlan 10
+[Huawei-GigabitEthernet0/0/1]quit \n'''
+
+        telnet_tip ='''\n[Huawei]user-interface vty 0 4     //进入vty用户界面视图
+[Huawei-ui-vty0-4]authentication-mode password   //配置认证模式为password
+[Huawei-ui-vty0-4]set authentication password cipher huawei   //设置password登录密码为huawei
+[Huawei-ui-vty0-4]user privilege level 15       //设置用户权限为15 \n'''
+        self.lbl_no_devices = QLabel(tr("MainWindow", no_devices))
+
+        self.lbl_topo =QLabel("topo")
+        pixmap = QPixmap("D:\\dabao\\topo.jpg")
+        # 如果图片不在内存中，就缩放到QLabel的大小
+        pixmap = pixmap.scaled(self.lbl_topo.width(), self.lbl_topo.height(), Qt.KeepAspectRatio)
+        # 在QLabel上显示图片
+        self.lbl_topo.setPixmap(pixmap)
+        self.ip_tip_edit=QTextEdit()
+        self.ip_tip_edit.setFixedHeight(500)
+        self.ip_tip_edit.setText(step_tip+edit_ip_tip+telnet_tip)
+        self.layout_topo_tip=QHBoxLayout()
+        font = QFont("Arial", 20, QFont.Bold);
+        self.lbl_no_devices.setFont(font)
+        palette = QPalette()
+        palette.setColor(QPalette.WindowText, QColor(255, 0, 0))
+        self.lbl_no_devices.setPalette(palette)
+        self.lbl_no_devices.setTextFormat(Qt.RichText)
+        self.lbl_no_devices.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.lbl_no_devices)
+        self.layout_topo_tip.addWidget(self.ip_tip_edit)
+        self.layout_topo_tip.addWidget(self.lbl_topo)
+
+        layout.addLayout(self.layout_topo_tip)
+
         self.tabs = QTabWidget()
         self.tabs.currentChanged.connect(self.on_tab_changed)
         self.refresh_tabs()
 
-
         # layout.addLayout(layout_combobox)
         layout.addWidget(self.tabs, 1)
-        self.btn_ok = QPushButton('发送')
-        self.btn_ok.clicked.connect(self.on_data_ok)
+        layout.addStretch()
+        self.label_status_device = QLabel()
+        self.label_status_device.setText("status:Connect")
+        layout.addWidget(self.label_status_device)
+
+
+        # self.btn_ok = QPushButton('发送')
+        # self.btn_ok.clicked.connect(self.on_data_ok)
         # self.btn_cancel = QPushButton('取消')
         # self.btn_cancel.clicked.connect(self.on_data_cancel)
 
         layout3 = QHBoxLayout()
         layout3.addStretch()
         # layout3.addWidget(self.btn_cancel)
-        layout3.addWidget(self.btn_ok)
+        # layout3.addWidget(self.btn_ok)
         layout.addLayout(layout3)
+
+        self.on_devices_updated(self.telnet_client, 0)
 
     def on_data_ok(self):
         json_str='hello'
@@ -232,12 +287,15 @@ class MainWindow(QMainWindow):
         port=self.bind_port_textedit.text()
         username=self.username_textedit.text()
         password=self.password_textedit.text()
-        telnet_client = TelnetClient()
+        self.telnet_client = TelnetClient()
         # 如果登录结果返加True，则执行命令，然后退出
-        if telnet_client.login_host(host_ip, port, username, password) ==False:
+        if self.telnet_client.login_host(host_ip, port, username, password) ==False:
             QMessageBox.information(None, "失败", "telnet连接失败")
         else:
             QMessageBox.information(None, "成功", "telnet连接成功")
+            self.current_device = self.telnet_client
+            self.on_devices_updated(self.current_device,1)
+
 
     def open_net_listen(self):
         print("net listen run!")
@@ -273,6 +331,32 @@ class MainWindow(QMainWindow):
             #     continue
             c = EditorContainer(container)
             self.tabs.addTab(c, tr("MainWindow", lbl))
+
+    def on_devices_updated(self, devices, hard_refresh):
+        # self.combobox_devices.blockSignals(True)
+
+        if devices:
+            self.lbl_no_devices.hide()
+            self.ip_tip_edit.hide()
+            self.lbl_topo.hide()
+            self.tabs.show()
+            self.label_status_device.setText("status:Connect")
+        else:
+            self.lbl_no_devices.show()
+            self.ip_tip_edit.show()
+            self.lbl_topo.show()
+            self.tabs.hide()
+            self.label_status_device.setText("status:Disconnect!")
+
+        if hard_refresh:
+            self.on_device_selected()
+    def on_device_selected(self):
+        self.rebuild()
+        self.refresh_tabs()
+
+    def rebuild(self):
+        for e in [self.switch_config, self.route_config, self.ac_config]:
+            e.rebuild(self.current_device)
 
     def populatePorts(self):
         # 使用pyserial的list_ports函数来获取所有串口
@@ -358,7 +442,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(None, "失败", "未连接互联网或者使用已过期")
   
 if __name__ == '__main__':  
-    app = QApplication(sys.argv)  
+    app = QApplication(sys.argv)
     ex = MainWindow()  
     ex.show()  
     sys.exit(app.exec_())
