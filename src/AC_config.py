@@ -35,6 +35,79 @@ from PIL import Image
 import cv2
 tr = QCoreApplication.translate
 
+
+class BasicHandler(QObject):
+    update = pyqtSignal()
+
+    def __init__(self, container):
+        super().__init__()
+        self.device = self.keyboard = None
+        self.widgets = []
+
+    def set_device(self, device):
+        self.device = device
+        if self.valid():
+            # self.keyboard = self.device.keyboard
+            self.show()
+        else:
+            self.hide()
+
+    def show(self):
+        for w in self.widgets:
+            w.show()
+
+    def hide(self):
+        for w in self.widgets:
+            w.hide()
+
+    def block_signals(self):
+        for w in self.widgets:
+            w.blockSignals(True)
+
+    def unblock_signals(self):
+        for w in self.widgets:
+            w.blockSignals(False)
+
+    # def update_from_keyboard(self):
+    #     raise NotImplementedError
+    #
+    # def valid(self):
+    #     raise NotImplementedError
+
+class NetConfigSetHandler(BasicHandler):
+
+    def __init__(self, container):
+        super().__init__(container)
+
+    def valid(self):
+        return 1
+        # return isinstance(self.device, VialKeyboard) #and self.device.keyboard.lighting_qmk_rgblight
+
+    def send_cmd(self,strmsg):
+        byte_array = strmsg.encode()
+        print(type(byte_array),len(byte_array))  # <class 'bytes'>
+        print(byte_array)  #
+        #hex_data = byte_array.hex()
+        return self.device.keyboard.set_custom_setting(byte_array)
+
+
+    def send_cmd_str(self,strmsg):
+        byte_array = strmsg.encode()
+        print(type(byte_array),len(byte_array))  # <class 'bytes'>
+        print(byte_array)  #
+        try:
+            return self.device.keyboard.set_custom_setting(byte_array)
+        except:
+            return None
+    def send_cmd_hex(self,byte_array):
+        #bytes_array是bytes,入参要转换为bytes传入进来
+        ret =self.device.keyboard.set_custom_setting(byte_array)
+        return ret
+
+    def recv_cmd_hex(self):
+        ret = self.device.keyboard.recv_custom_setting()
+        return ret
+
 class ac_config(BasicEditor):
     def __init__(self):
         super().__init__()
@@ -49,6 +122,7 @@ class ac_config(BasicEditor):
         self.addWidget(w)
         self.setupUi(w,self.container)
 
+        self.handlers = [NetConfigSetHandler(self.container)]
 
     def setupUi(self,Form,contain):
 
@@ -103,5 +177,3 @@ class ac_config(BasicEditor):
 
         if not self.valid():
             return
-        if len(device.kmapcustom):
-            print(device.kmapcustom)
