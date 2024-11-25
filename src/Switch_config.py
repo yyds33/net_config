@@ -27,13 +27,83 @@ from PyQt5 import QtCore
 from PyQt5.QtCore import pyqtSignal, QObject, QSize,Qt,QCoreApplication
 from PyQt5.QtGui import QColor, QFont, QPalette
 from PyQt5.QtWidgets import QWidget, QPushButton, QHBoxLayout, QVBoxLayout, QSizePolicy, QGridLayout, QLabel, QSlider, \
-    QComboBox, QColorDialog, QCheckBox, QLineEdit, QButtonGroup, QRadioButton, QFileDialog, QMessageBox
+    QComboBox, QColorDialog, QCheckBox, QLineEdit, QButtonGroup, QRadioButton, QFileDialog, QMessageBox, QTextEdit, \
+    QTreeWidget, QTreeWidgetItem
 from PyQt5.QtGui import QColor,QImage,QPixmap
 from basic_editor import BasicEditor
 from Send_alarm import SendAlarm
 from PIL import Image
 import cv2
+import re
 tr = QCoreApplication.translate
+
+
+class BasicHandler(QObject):
+    update = pyqtSignal()
+
+    def __init__(self, container):
+        super().__init__()
+        self.device  = None
+        self.widgets = []
+
+    def set_device(self, device):
+        self.device = device
+        if self.valid():
+            # self.keyboard = self.device.keyboard
+            self.show()
+        else:
+            self.hide()
+
+    def show(self):
+        for w in self.widgets:
+            w.show()
+
+    def hide(self):
+        for w in self.widgets:
+            w.hide()
+
+    def block_signals(self):
+        for w in self.widgets:
+            w.blockSignals(True)
+
+    def unblock_signals(self):
+        for w in self.widgets:
+            w.blockSignals(False)
+
+class NetConfigSetHandler(BasicHandler):
+
+    def __init__(self, container):
+        super().__init__(container)
+
+    def valid(self):
+        return 1
+        # return isinstance(self.device, VialKeyboard) #and self.device.keyboard.lighting_qmk_rgblight
+
+    def send_cmd(self,strmsg):
+        byte_array = strmsg.encode()
+        print(type(byte_array),len(byte_array))  # <class 'bytes'>
+        print(byte_array)  #
+        #hex_data = byte_array.hex()
+        return 0
+
+
+    def send_cmd_str(self,strmsg):
+        byte_array = strmsg.encode()
+        print(type(byte_array),len(byte_array))  # <class 'bytes'>
+        print(byte_array)  #
+        try:
+            return 0
+        except:
+            return None
+    def send_cmd_hex(self,byte_array):
+        #bytes_array是bytes,入参要转换为bytes传入进来
+        ret =0
+        return ret
+
+    def recv_cmd_hex(self):
+        ret = 0 #self.device.keyboard.recv_custom_setting()
+        return ret
+
 
 class switch_config(BasicEditor):
     def __init__(self):
@@ -48,25 +118,190 @@ class switch_config(BasicEditor):
         w.setLayout(self.container)
         self.addWidget(w)
         self.setupUi(w,self.container)
+        self.handlers = [NetConfigSetHandler(self.container)]
 
 
     def setupUi(self,Form,contain):
 
-        self.label = QLabel("按钮")
-        self.testButton = QPushButton("单击按钮")
+        # self.label = QLabel("按钮")
+        self.testButton = QPushButton("查看配置")
 
         self.testButton.clicked.connect(self.on_btn_test_clicked)
+        self.treedata = QTreeWidget()
+        self.treedata.setFixedWidth(600)
+        self.treedata .setColumnCount(2)
+        self.treedata .setHeaderLabels(['Key', 'Value'])
+        # self.setCentralWidget(self.treedata )
 
+        self.lineEdit = QTextEdit()
+        self.lineEdit.setFixedWidth(600)
+
+        # print(retstr)
         self.horizontalLayout = QHBoxLayout()
-        self.horizontalLayout.addWidget(self.label)
-        self.horizontalLayout.addWidget(self.testButton)
+        self.horizontalLayout.addWidget(self.treedata)
+        self.horizontalLayout.addWidget(self.lineEdit)
+        self.horizontalLayout.setStretch(1,1)
+        self.horizontalLayout.setStretch(1, 2)
+        # self.horizontalLayout.addWidget(self.label)
+        self.layout1 = QHBoxLayout()
+        self.btn_dhcp= QPushButton("开启DHCP")
+        self.btn_dhcp.clicked.connect(self.on_btn_dhcp_clicked)
+        self.layout1.addWidget(self.btn_dhcp)
+
+        self.btn_bgp= QPushButton("BGP")
+        self.btn_bgp.clicked.connect(self.on_btn_bgp_clicked)
+        self.layout1.addWidget(self.btn_bgp)
+
+        self.btn_ospf= QPushButton("OSPF")
+        self.btn_ospf.clicked.connect(self.on_btn_ospf_clicked)
+        self.layout1.addWidget(self.btn_ospf)
+
+        self.layout2 = QHBoxLayout()
+        self.lbl_vlan = QLabel("VLAN Id")
+        self.lineedit_vlan = QLineEdit()
+        self.lineedit_vlan.setText("99")
+        self.lineedit_vlan.setFixedWidth(300)
+        self.btn_vlan= QPushButton("添加VLAN")
+        self.btn_vlan.clicked.connect(self.on_btn_vlan_clicked)
+        self.layout2.addWidget(self.lbl_vlan)
+        self.layout2.addWidget(self.lineedit_vlan)
+        self.layout2.addWidget(self.btn_vlan)
+        self.layout2.addStretch()
+
+
+
+        self.layoutn= QHBoxLayout()
+        self.layoutn.addWidget(self.testButton)
+        self.layoutn.addStretch()
+
+        contain.addLayout(self.layout1)
+        contain.addLayout(self.layout2)
         contain.addLayout(self.horizontalLayout)
+        contain.addLayout(self.layoutn)
+
+    def on_btn_dhcp_clicked(self):
+        print("dhcp")
+        self.device.execute_some_command("system-view")
+        self.device.execute_some_command("dhcp enable")
+        #完善dhcp相关功能命令
+
+    def on_btn_vlan_clicked(self):
+        print("vlan")
+        #完善vlan相关命令
+
+    def on_btn_bgp_clicked(self):
+        print("bgp")
+        #添加相关代码
+
+    def on_btn_ospf_clicked(self):
+        print("ospf")
+        # 添加相关代码
+
+    def parse_data(self,config_str):
+        config_dict = {}
+        current_key = None
+        current_sub_dict = None
+
+        lines = config_str.split('\n')
+        for line in lines:
+            line = line.strip()
+
+            # Skip comments and empty lines
+            if not line or line.startswith('#'):
+                continue
+
+                # Handle nested structures like interfaces
+            if line.endswith('{'):
+                current_key = line[:-1].strip()
+                current_sub_dict = {}
+                config_dict[current_key] = current_sub_dict
+            elif line.startswith('}'):
+                current_key = None
+                current_sub_dict = None
+            else:
+                # Split the line into key and value
+                if ' ' in line:
+                    key, value = line.split(' ', 1)
+                    key = key.strip()
+                    value = value.strip()
+                else:
+                    key = line.strip()
+                    value = None
+
+                if key in config_dict.keys():
+                    current_sub_dict={}
+                    valuetemp= config_dict[key]
+                    if isinstance(valuetemp, list):
+                        values = valuetemp+[value]
+                    else:
+                        values = [valuetemp,value]
+                    config_dict[key] = values
+                    # Handle nested keys
+                # if current_sub_dict:
+                #     current_sub_dict[key] = value
+                #     # config_dict[key] = values
+                else:
+                    config_dict[key] = value
+
+                    # Post-process to handle interfaces with configurations
+        interface_pattern = re.compile(r'^interface\s+(\S+)')
+        ip_address_pattern = re.compile(r'^ip\s+address\s+(\S+)\s+(\S+)')
+        for key, value in list(config_dict.items()):
+            if isinstance(value, dict):
+                # Extract interface details
+                match = interface_pattern.match(key)
+                if match:
+                    interface_name = match.group(1)
+                    # Look for IP address configuration in the sub-dict
+                    for sub_key, sub_value in value.items():
+                        if isinstance(sub_value, dict):
+                            ip_match = ip_address_pattern.match(' '.join(sub_value.keys()))
+                            if ip_match:
+                                ip_address = ip_match.group(1)
+                                subnet_mask = ip_match.group(2)
+                                # Update the dictionary structure
+                                config_dict[interface_name] = {
+                                    'type': 'interface',
+                                    'ip_address': ip_address,
+                                    'subnet_mask': subnet_mask,
+                                    # Keep other configurations if any
+                                    'config': {k: v for k, v in sub_value.items() if k not in ['ip address']}
+                                }
+                                # Remove the old interface entry
+                                del config_dict[key]
+                                break
+        return self.flatten_dict(config_dict)
+                                # Flatten the dictionary (remove empty nested dicts)
+
+    def flatten_dict(self,d, parent_key='', sep='.'):
+        items = []
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(self.flatten_dict(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
+
 
     def on_btn_test_clicked(self):
-        QMessageBox.information(None, "测试", "单击了按钮")
+        # QMessageBox.information(None, "测试", "单击了按钮")
         #在该函数下添加你想要做的操作代码
+        retstr= self.device.execute_some_command("disp cu")
+        self.lineEdit.setText(retstr)
+        result =self.parse_data(retstr)
+        print(result)
 
+        self.add_dict_to_tree(self.treedata, result)
 
+    def add_dict_to_tree(self, tree, data):
+        for key, value in data.items():
+            item = QTreeWidgetItem([key, str(value)])
+            if isinstance(value, dict):
+                self.add_dict_to_tree(tree, value)
+            else:
+                item.setFlags(item.flags() ^ 2)  # 去掉可编辑的标志
+            tree.addTopLevelItem(item)
  # layout 移除所有控件
     def remove_all_controls(self,layout):
         while layout.count():
@@ -100,6 +335,6 @@ class switch_config(BasicEditor):
 
         if not self.valid():
             return
-        if len(device.kmapcustom):
-            print(device.kmapcustom)
+        # if len(device.kmapcustom):
+        #     print(device.kmapcustom)
 
